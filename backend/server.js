@@ -5,6 +5,16 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+process.on('unhandledRejection', (err) => {
+    console.error('Unhandled Promise Rejection:', err);
+    process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    process.exit(1);
+});
+
 dotenv.config();
 
 const app = express();
@@ -22,6 +32,9 @@ const pool = new Pool({
     database: process.env.DB_NAME, 
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
+        max: 20, // максимальное количество клиентов
+    idleTimeoutMillis: 30000, // закрыть простаивающие клиенты через 30 секунд
+    connectionTimeoutMillis: 2000
 });
 
 // Проверка подключения
@@ -70,17 +83,21 @@ app.get('/api/test-db', async (req, res) => {
 });
 
 // Auth endpoints
+// Исправленная регистрация
 app.post('/api/auth/register', async (req, res) => {
+    console.log('🔵 REGISTER REQUEST:', req.body);
+    
     try {
         const { full_name, email, password, phone, default_address } = req.body;
         
+        // Быстрая валидация
         if (!full_name || !email || !password) {
             return res.status(400).json({ error: 'Все обязательные поля должны быть заполнены' });
         }
 
-        // Проверка существующего пользователя
+        // Проверяем email на существование
         const userCheck = await pool.query(
-            'SELECT * FROM users WHERE email = $1',
+            'SELECT user_id FROM users WHERE email = $1',
             [email]
         );
 
@@ -88,37 +105,47 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        // Оптимизированное хеширование (меньше saltRounds)
+        const hashedPassword = await bcrypt.hash(password, 8); // вместо 10
 
+        // Создаем пользователя
         const result = await pool.query(
-            `INSERT INTO users (full_name, email, password_hash, phone, default_address) 
-             VALUES ($1, $2, $3, $4, $5) 
-             RETURNING user_id, full_name, email, phone, default_address, created_at`,
-            [full_name, email, hashedPassword, phone || null, default_address || null]
+            `INSERT INTO users (full_name, email, password_hash, phone, default_address)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING user_id, full_name, email, phone, default_address`,
+            [full_name, email, hashedPassword, phone, default_address]
         );
 
-        const user = result.rows[0];
+        const newUser = result.rows[0];
+
+        // Быстрая генерация токена
         const token = jwt.sign(
-            { userId: user.user_id, email: user.email },
+            { userId: newUser.user_id, email: newUser.email },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
 
         res.status(201).json({
+            message: 'Пользователь успешно зарегистрирован',
             token,
-            user: {
-                id: user.user_id,
-                full_name: user.full_name,
-                email: user.email,
-                phone: user.phone,
-                default_address: user.default_address
-            }
+            user: newUser
         });
 
     } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        console.error('❌ REGISTRATION ERROR:', error);
+        res.status(500).json({ 
+            error: 'Ошибка сервера при регистрации',
+            message: error.message
+        });
     }
+});
+
+// Исправленная верификация токена
+app.post('/api/auth/verify', authenticateToken, (req, res) => {
+    res.json({ 
+        valid: true, 
+        user: req.user 
+    });
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -354,7 +381,29 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
         await client.query('COMMIT');
         
-        res.status(201).json(order);
+        // Получаем полную информацию о заказе с appointments
+        const fullOrderResult = await pool.query(
+            `SELECT 
+                o.*,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'appointment_id', a.appointment_id,
+                            'flight_id', a.flight_id,
+                            'passengers_count', a.passengers_count,
+                            'status', a.status
+                        )
+                    ) FILTER (WHERE a.appointment_id IS NOT NULL),
+                    '[]'
+                ) as appointments
+            FROM orders o
+            LEFT JOIN appointments a ON o.order_id = a.order_id
+            WHERE o.order_id = $1
+            GROUP BY o.order_id`,
+            [order.order_id]
+        );
+        
+        res.status(201).json(fullOrderResult.rows[0]);
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Order error:', error);
@@ -368,29 +417,32 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT 
-    o.order_id,
-    o.user_id,
-    o.total_amount,
-    o.status,
-    o.delivery_address,
-    o.delivery_date,
-    o.created_at,
-    json_agg(
-        json_build_object(
-            'appointment_id', a.appointment_id,
-            'flight_id', a.flight_id,
-            'passengers_count', a.passengers_count,
-            'status', a.status,
-            'seat_numbers', a.seat_numbers,
-            'boarding_time', a.boarding_time,
-            'special_requests', a.special_requests
-        )
-    ) as appointments
-FROM orders o
-LEFT JOIN appointments a ON o.order_id = a.order_id
-WHERE o.user_id = $1
-GROUP BY o.order_id
-ORDER BY o.created_at DESC`,
+                o.order_id,
+                o.user_id,
+                o.total_amount,
+                o.status,
+                o.delivery_address,
+                o.delivery_date,
+                o.created_at,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'appointment_id', a.appointment_id,
+                            'flight_id', a.flight_id,
+                            'passengers_count', a.passengers_count,
+                            'status', a.status,
+                            'seat_numbers', a.seat_numbers,
+                            'boarding_time', a.boarding_time,
+                            'special_requests', a.special_requests
+                        )
+                    ) FILTER (WHERE a.appointment_id IS NOT NULL),
+                    '[]'
+                ) as appointments
+            FROM orders o
+            LEFT JOIN appointments a ON o.order_id = a.order_id
+            WHERE o.user_id = $1
+            GROUP BY o.order_id
+            ORDER BY o.created_at DESC`,
             [req.user.userId]
         );
 
@@ -524,7 +576,7 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Добавьте в server.js
+// Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await pool.end();
@@ -536,9 +588,6 @@ process.on('SIGTERM', async () => {
   await pool.end();
   process.exit(0);
 });
-
-
-
 
 // Запуск сервера
 app.listen(PORT, () => {

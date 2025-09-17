@@ -25,18 +25,41 @@ function AppContent() {
     } = useCart();
 
     useEffect(() => {
-        const savedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
-        
-        if (savedUser && token) {
-            try {
-                setUser(JSON.parse(savedUser));
-            } catch (error) {
-                console.error('Error parsing saved user:', error);
-                localStorage.removeItem('user');
-                localStorage.removeItem('token');
+        const checkAuth = async () => {
+            const token = localStorage.getItem('token');
+            const savedUser = localStorage.getItem('user');
+            
+            if (token && savedUser) {
+                try {
+                    const response = await fetch('http://localhost:3001/api/auth/verify', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.valid) {
+                            setUser(JSON.parse(savedUser));
+                        } else {
+                            localStorage.removeItem('token');
+                            localStorage.removeItem('user');
+                        }
+                    } else {
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                    }
+                } catch (error) {
+                    console.error('Token verification error:', error);
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                }
             }
-        }
+        };
+
+        checkAuth();
     }, []);
 
     const handleLogin = (userData, token) => {

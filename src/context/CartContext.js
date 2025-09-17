@@ -78,25 +78,36 @@ export const CartProvider = ({ children }) => {
     loadCart();
   }, []);
 
-  const addToCart = (flight) => {
+
+
+// СТАЛО:
+const addToCart = async (flight) => {
     dispatch({ type: 'ADD_TO_CART', payload: flight });
     
     // Sync with server if user is logged in
     const token = localStorage.getItem('token');
     if (token) {
-      fetch('http://localhost:3001/api/cart', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          flight_id: flight.flight_id,
-          passengers_count: 1
-        })
-      }).catch(error => console.error('Error syncing cart:', error));
+        try {
+            const response = await fetch('http://localhost:3001/api/cart', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    flight_id: flight.flight_id,
+                    passengers_count: 1
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error('Ошибка синхронизации корзины');
+            }
+        } catch (error) {
+            console.error('Error syncing cart:', error);
+        }
     }
-  };
+};
 
   const removeFromCart = (flightId) => {
     dispatch({ type: 'REMOVE_FROM_CART', payload: flightId });

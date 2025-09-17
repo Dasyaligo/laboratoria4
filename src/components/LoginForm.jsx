@@ -26,37 +26,42 @@ const LoginForm = ({ onLogin, loading, setLoading }) => {
     };
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoginError('');
+    e.preventDefault();
+    setLoginError('');
 
-        if (!validateForm()) {
-            return;
+    if (!validateForm()) {
+        return;
+    }
+
+    try {
+        setLoading(true);
+        const response = await fetch('http://localhost:3001/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData),
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Ошибка авторизации');
         }
 
-        try {
-            setLoading(true);
-            const response = await fetch('http://localhost:3001/api/auth/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Ошибка авторизации');
-            }
-
-            const data = await response.json();
+        if (data.token && data.user) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
             onLogin(data.user, data.token);
-            
-        } catch (err) {
-            setLoginError(err.message);
-        } finally {
-            setLoading(false);
         }
-    };
+        
+    } catch (err) {
+        setLoginError(err.message);
+        console.error('Login error:', err);
+    } finally {
+        setLoading(false);
+    }
+};
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;

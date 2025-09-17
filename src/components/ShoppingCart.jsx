@@ -1,3 +1,4 @@
+// ShoppingCart.jsx - ЗАМЕНИТЬ весь файл:
 import { useState } from 'react';
 
 const ShoppingCart = ({ 
@@ -12,7 +13,7 @@ const ShoppingCart = ({
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [checkoutError, setCheckoutError] = useState('');
     const [deliveryData, setDeliveryData] = useState({
-        delivery_address: '',
+        delivery_address: user?.default_address || '',
         delivery_date: ''
     });
 
@@ -22,9 +23,13 @@ const ShoppingCart = ({
             setCheckoutError('');
 
             const orderData = {
-                cart_items: cart,
+                cart_items: cart.map(item => ({
+                    flight_id: item.flight_id,
+                    passengers_count: item.passengers_count || item.quantity || 1,
+                    price: item.price
+                })),
                 total_amount: totalAmount,
-                delivery_address: deliveryData.delivery_address || user?.default_address,
+                delivery_address: deliveryData.delivery_address,
                 delivery_date: deliveryData.delivery_date
             };
 
@@ -49,15 +54,17 @@ const ShoppingCart = ({
             
         } catch (error) {
             console.error('Ошибка оформления заказа:', error);
-            setCheckoutError(error.message);
+            setCheckoutError(error.message || 'Произошла ошибка при оформлении заказа');
         } finally {
             setCheckoutLoading(false);
         }
     };
 
     const validateDeliveryDate = (date) => {
+        if (!date) return false;
         const selectedDate = new Date(date);
         const today = new Date();
+        today.setHours(0, 0, 0, 0);
         return selectedDate >= today;
     };
 
@@ -94,45 +101,48 @@ const ShoppingCart = ({
             )}
 
             <div className="cart-items">
-                {cart.map(item => (
-                    <div key={item.flight_id} className="cart-item">
-                        <div className="item-info">
-                            <h4>{item.origin} → {item.destination}</h4>
-                            <p className="item-airline">{item.airline}</p>
-                            <span className="item-price">{item.price} руб. за пассажира</span>
-                        </div>
-                        
-                        <div className="item-controls">
-                            <div className="quantity-controls">
-                                <button
-                                    onClick={() => updateQuantity(item.flight_id, item.quantity - 1)}
-                                    className="quantity-btn"
-                                    disabled={item.quantity <= 1}
-                                >
-                                    -
-                                </button>
-                                <span className="quantity">{item.quantity} пассажир(ов)</span>
-                                <button
-                                    onClick={() => updateQuantity(item.flight_id, item.quantity + 1)}
-                                    className="quantity-btn"
-                                >
-                                    +
-                                </button>
+                {cart.map(item => {
+                    const quantity = item.passengers_count || item.quantity || 1;
+                    return (
+                        <div key={item.flight_id} className="cart-item">
+                            <div className="item-info">
+                                <h4>{item.origin} → {item.destination}</h4>
+                                <p className="item-airline">{item.airline}</p>
+                                <span className="item-price">{item.price} руб. за пассажира</span>
                             </div>
                             
-                            <div className="item-total">
-                                {item.price * item.quantity} руб.
+                            <div className="item-controls">
+                                <div className="quantity-controls">
+                                    <button
+                                        onClick={() => updateQuantity(item.flight_id, quantity - 1)}
+                                        className="quantity-btn"
+                                        disabled={quantity <= 1}
+                                    >
+                                        -
+                                    </button>
+                                    <span className="quantity">{quantity} пассажир(ов)</span>
+                                    <button
+                                        onClick={() => updateQuantity(item.flight_id, quantity + 1)}
+                                        className="quantity-btn"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                
+                                <div className="item-total">
+                                    {item.price * quantity} руб.
+                                </div>
+                                
+                                <button
+                                    onClick={() => removeFromCart(item.flight_id)}
+                                    className="remove-btn"
+                                >
+                                    Удалить
+                                </button>
                             </div>
-                            
-                            <button
-                                onClick={() => removeFromCart(item.flight_id)}
-                                className="remove-btn"
-                            >
-                                Удалить
-                            </button>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             <div className="cart-summary">
@@ -147,6 +157,7 @@ const ShoppingCart = ({
                         placeholder="Адрес доставки"
                         value={deliveryData.delivery_address}
                         onChange={(e) => setDeliveryData({...deliveryData, delivery_address: e.target.value})}
+                        required
                     />
                     <input
                         type="date"
@@ -154,6 +165,7 @@ const ShoppingCart = ({
                         value={deliveryData.delivery_date}
                         onChange={(e) => setDeliveryData({...deliveryData, delivery_date: e.target.value})}
                         min={new Date().toISOString().split('T')[0]}
+                        required
                     />
                 </div>
                 
@@ -171,7 +183,7 @@ const ShoppingCart = ({
                     <button 
                         onClick={handleCheckout} 
                         className="checkout-btn"
-                        disabled={checkoutLoading || !deliveryData.delivery_date || !validateDeliveryDate(deliveryData.delivery_date)}
+                        disabled={checkoutLoading || !deliveryData.delivery_date || !deliveryData.delivery_address || !validateDeliveryDate(deliveryData.delivery_date)}
                     >
                         {checkoutLoading ? 'Оформление...' : 'Оформить заказ'}
                     </button>

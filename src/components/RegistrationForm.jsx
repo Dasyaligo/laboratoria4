@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+const API_BASE_URL = 'http://localhost:3001/api';
+
 const RegistrationForm = ({ onRegister, loading, setLoading }) => {
     const [formData, setFormData] = useState({
         full_name: '',
@@ -14,8 +16,8 @@ const RegistrationForm = ({ onRegister, loading, setLoading }) => {
     const validateForm = () => {
         const newErrors = {};
         
-        if (!formData.full_name) newErrors.full_name = 'ФИО обязательно';
-        if (!formData.email) newErrors.email = 'Email обязателен';
+        if (!formData.full_name?.trim()) newErrors.full_name = 'ФИО обязательно';
+        if (!formData.email?.trim()) newErrors.email = 'Email обязателен';
         if (!formData.password) newErrors.password = 'Пароль обязателен';
         if (formData.password !== formData.confirmPassword) {
             newErrors.confirmPassword = 'Пароли не совпадают';
@@ -34,82 +36,150 @@ const RegistrationForm = ({ onRegister, loading, setLoading }) => {
 
         try {
             setLoading(true);
-            const response = await fetch('http://localhost:3001/api/auth/register', {
+            setErrors({});
+            
+            const response = await fetch(`${API_BASE_URL}/auth/register`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                headers: { 
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify({
+                    full_name: formData.full_name.trim(),
+                    email: formData.email.trim().toLowerCase(),
+                    password: formData.password,
+                    phone: formData.phone || null,
+                    default_address: formData.default_address || null
+                })
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || 'Ошибка регистрации');
+                throw new Error(errorData.error || errorData.message || 'Ошибка регистрации');
             }
 
             const data = await response.json();
-            onRegister(data.user);
+            
+            if (data.token && data.user) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                onRegister(data.user, data.token);
+            }
+            
         } catch (err) {
-            setErrors({ submit: err.message });
+            console.error('Registration error:', err);
+            setErrors({ submit: err.message || 'Ошибка соединения с сервером' });
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <form onSubmit={handleSubmit}>
+        <div className="registration-form">
             <h2>Регистрация</h2>
             
-            <input
-                type="text"
-                placeholder="ФИО"
-                value={formData.full_name}
-                onChange={(e) => setFormData({...formData, full_name: e.target.value})}
-            />
-            {errors.full_name && <span>{errors.full_name}</span>}
+            {errors.submit && (
+                <div className="error-message">
+                    {errors.submit}
+                </div>
+            )}
 
-            <input
-                type="email"
-                placeholder="Email"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-            />
-            {errors.email && <span>{errors.email}</span>}
+            <form onSubmit={handleSubmit} className="registration-form-container">
+                <div className="form-group">
+                    <label htmlFor="full_name">ФИО:*</label>
+                    <input
+                        type="text"
+                        id="full_name"
+                        placeholder="Иван Иванов"
+                        value={formData.full_name}
+                        onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+                        className={errors.full_name ? 'error' : ''}
+                        disabled={loading}
+                    />
+                    {errors.full_name && <span className="error-text">{errors.full_name}</span>}
+                </div>
 
-            <input
-                type="password"
-                placeholder="Пароль"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-            />
-            {errors.password && <span>{errors.password}</span>}
+                <div className="form-group">
+                    <label htmlFor="email">Email:*</label>
+                    <input
+                        type="email"
+                        id="email"
+                        placeholder="example@mail.com"
+                        value={formData.email}
+                        onChange={(e) => setFormData({...formData, email: e.target.value})}
+                        className={errors.email ? 'error' : ''}
+                        disabled={loading}
+                    />
+                    {errors.email && <span className="error-text">{errors.email}</span>}
+                </div>
 
-            <input
-                type="password"
-                placeholder="Подтвердите пароль"
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-            />
-            {errors.confirmPassword && <span>{errors.confirmPassword}</span>}
+                <div className="form-group">
+                    <label htmlFor="password">Пароль:*</label>
+                    <input
+                        type="password"
+                        id="password"
+                        placeholder="Минимум 6 символов"
+                        value={formData.password}
+                        onChange={(e) => setFormData({...formData, password: e.target.value})}
+                        className={errors.password ? 'error' : ''}
+                        disabled={loading}
+                    />
+                    {errors.password && <span className="error-text">{errors.password}</span>}
+                </div>
 
-            <input
-                type="tel"
-                placeholder="Телефон"
-                value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
-            />
+                <div className="form-group">
+                    <label htmlFor="confirmPassword">Подтвердите пароль:*</label>
+                    <input
+                        type="password"
+                        id="confirmPassword"
+                        placeholder="Повторите пароль"
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                        className={errors.confirmPassword ? 'error' : ''}
+                        disabled={loading}
+                    />
+                    {errors.confirmPassword && <span className="error-text">{errors.confirmPassword}</span>}
+                </div>
 
-            <input
-                type="text"
-                placeholder="Адрес по умолчанию"
-                value={formData.default_address}
-                onChange={(e) => setFormData({...formData, default_address: e.target.value})}
-            />
+                <div className="form-group">
+                    <label htmlFor="phone">Телефон:</label>
+                    <input
+                        type="tel"
+                        id="phone"
+                        placeholder="+7 (999) 999-99-99"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                        disabled={loading}
+                    />
+                </div>
 
-            <button type="submit" disabled={loading}>
-                {loading ? 'Регистрация...' : 'Зарегистрироваться'}
-            </button>
+                <div className="form-group">
+                    <label htmlFor="default_address">Адрес:</label>
+                    <input
+                        type="text"
+                        id="default_address"
+                        placeholder="ул. Пушкина, д. 10, кв. 5"
+                        value={formData.default_address}
+                        onChange={(e) => setFormData({...formData, default_address: e.target.value})}
+                        disabled={loading}
+                    />
+                </div>
 
-            {errors.submit && <span>{errors.submit}</span>}
-        </form>
+                <button 
+                    type="submit" 
+                    disabled={loading}
+                    className="submit-btn"
+                >
+                    {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+                </button>
+            </form>
+
+            <div className="demo-credentials">
+                <h4>Пример данных для регистрации:</h4>
+                <p>ФИО: Иван Иванов</p>
+                <p>Email: test@example.com</p>
+                <p>Пароль: password123</p>
+            </div>
+        </div>
     );
 };
 

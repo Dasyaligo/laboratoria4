@@ -1,25 +1,30 @@
 const API_URL = 'http://localhost:3001/api/auth';
 
 export async function login(email, password) {
-    const response = await fetch(`${API_URL}/login`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-    });
+    try {
+        const response = await fetch(`${API_URL}/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password }),
+        });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Ошибка авторизации');
-    }
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || data.message ||'Ошибка авторизации');
+        }
 
-    const data = await response.json();
-    if (data.token) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+        }
+        return data;
+    } catch (error) {
+        console.error('Login error:', error);
+        throw error;
     }
-    return data;
 }
 
 export async function register(userData) {
@@ -61,7 +66,13 @@ export async function verifyToken() {
             throw new Error('Token verification failed');
         }
 
-        return await response.json();
+        const data = await response.json();
+        if (data.user && data.valid) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+            return data.user;
+        }
+        return null;
+        
     } catch (error) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');

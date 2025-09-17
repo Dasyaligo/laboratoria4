@@ -5,33 +5,34 @@ const AppointmentsList = ({ user }) => {
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const loadAppointments = async () => {
-        try {
-            setLoading(true);
-            const token = localStorage.getItem('token');
-            
-            if (!token) {
-                setError('Требуется авторизация');
-                return;
+const loadAppointments = async () => {
+    try {
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        
+        if (!token) {
+            setError('Требуется авторизация');
+            return;
+        }
+
+        const response = await fetch('http://localhost:3001/api/orders', {
+            headers: {
+                'Authorization': `Bearer ${token}`
             }
+        });
 
-            const response = await fetch('http://localhost:3001/api/orders', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке записей');
+        }
 
-            if (!response.ok) {
-                throw new Error('Ошибка при загрузке записей');
-            }
-
-            const orders = await response.json();
-            
-            // Извлекаем все appointments из заказов
-            const allAppointments = [];
-            orders.forEach(order => {
-                if (order.appointments) {
-                    order.appointments.forEach(appointment => {
+        const orders = await response.json();
+        
+        // Извлекаем все appointments из заказов
+        const allAppointments = [];
+        orders.forEach(order => {
+            if (order.appointments && Array.isArray(order.appointments)) {
+                order.appointments.forEach(appointment => {
+                    if (appointment && appointment.appointment_id) {
                         allAppointments.push({
                             ...appointment,
                             order_id: order.order_id,
@@ -39,19 +40,20 @@ const AppointmentsList = ({ user }) => {
                             delivery_address: order.delivery_address,
                             total_amount: order.total_amount
                         });
-                    });
-                }
-            });
+                    }
+                });
+            }
+        });
 
-            setAppointments(allAppointments);
-            setError(null);
-        } catch (err) {
-            setError(err.message);
-            console.error('Ошибка при загрузке записей:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
+        setAppointments(allAppointments);
+        setError(null);
+    } catch (err) {
+        setError(err.message);
+        console.error('Ошибка при загрузке записей:', err);
+    } finally {
+        setLoading(false);
+    }
+};
 
     useEffect(() => {
         if (user) {

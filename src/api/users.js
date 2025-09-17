@@ -27,9 +27,9 @@ export async function updateProfile(profileData) {
         headers: getAuthHeaders(),
         body: JSON.stringify({
             full_name: profileData.full_name,
-            email: profileData.email,
             phone: profileData.phone,
             default_address: profileData.default_address
+            // Убрали email, так как его нельзя менять через этот endpoint
         })
     });
 
